@@ -15,6 +15,9 @@ type driverConfig struct {
 
 	// ServiceName is added as `ServiceContext()` to all logs when set
 	ServiceName string
+
+	// ServiceVersion is added as `ServiceContext()` to all logs when set
+	ServiceVersion string
 }
 
 // Core is a zapdriver specific core wrapped around the default zap core. It
@@ -52,9 +55,12 @@ func ReportAllErrors(report bool) func(*core) {
 
 // zapdriver core option to add `ServiceContext()` to all logs with `name` as
 // service name
-func ServiceName(name string) func(*core) {
+func ServiceName(name string, version ...string) func(*core) {
 	return func(c *core) {
 		c.config.ServiceName = name
+		if len(version) > 0 {
+			c.config.ServiceVersion = version[0]
+		}
 	}
 }
 
@@ -124,14 +130,14 @@ func (c *core) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	fields = append(fields, labelsField(c.allLabels()))
 	fields = c.withSourceLocation(ent, fields)
 	if c.config.ServiceName != "" {
-		fields = c.withServiceContext(c.config.ServiceName, fields)
+		fields = c.withServiceContext(c.config.ServiceName, c.config.ServiceVersion, fields)
 	}
 	if c.config.ReportAllErrors && zapcore.ErrorLevel.Enabled(ent.Level) {
 		fields = c.withErrorReport(ent, fields)
 		if c.config.ServiceName == "" {
 			// A service name was not set but error report needs it
 			// So attempt to add a generic service name
-			fields = c.withServiceContext("unknown", fields)
+			fields = c.withServiceContext("unknown", "", fields)
 		}
 	}
 
@@ -216,7 +222,7 @@ func (c *core) withSourceLocation(ent zapcore.Entry, fields []zapcore.Field) []z
 	return append(fields, SourceLocation(ent.Caller.PC, ent.Caller.File, ent.Caller.Line, true))
 }
 
-func (c *core) withServiceContext(name string, fields []zapcore.Field) []zapcore.Field {
+func (c *core) withServiceContext(name, version string, fields []zapcore.Field) []zapcore.Field {
 	// If the service context was manually set, don't overwrite it
 	for i := range fields {
 		if fields[i].Key == serviceContextKey {
@@ -224,7 +230,7 @@ func (c *core) withServiceContext(name string, fields []zapcore.Field) []zapcore
 		}
 	}
 
-	return append(fields, ServiceContext(name))
+	return append(fields, ServiceContext(name, version))
 }
 
 func (c *core) withErrorReport(ent zapcore.Entry, fields []zapcore.Field) []zapcore.Field {
